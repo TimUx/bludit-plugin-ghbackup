@@ -63,7 +63,7 @@ For automatic workflow/secret management, the Fine-grained token also needs:
 - **Workflows → Read and write**
 - **Secrets → Read and write**
 
-GitHub documents that modifying files below `.github/workflows/` requires the Workflows repository permission in addition to Contents, and repository Actions secrets require the Secrets repository permission. citeturn0search1turn0search2
+GitHub documents that modifying files below `.github/workflows/` requires the Workflows repository permission in addition to Contents, and repository Actions secrets require the Secrets repository permission.
 
 If the token only has Contents permission, normal manual backups can work but automatic GitHub Actions setup will fail.
 
