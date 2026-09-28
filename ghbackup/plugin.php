@@ -93,8 +93,8 @@ class pluginGhbackup extends Plugin
         $html .= '<div style="margin-top:1.5em;padding:1em;border:1px solid #ddd;background:#f8f9fa">';
         $html .= '<strong>GitHub Actions / Scheduler – Token-Hilfe</strong>';
         $html .= '<p class="tip">Normales Backup: Fine-grained Personal Access Token für dieses Repository mit <strong>Contents: Read and write</strong>.</p>';
-        $html .= '<p class="tip">Für die automatische GitHub-Actions-Verwaltung zusätzlich <strong>Workflows: Read and write</strong> und <strong>Secrets: Read and write</strong>. Das Plugin erzeugt das Secret <code>GHBACKUP_SCHEDULER_TOKEN</code> automatisch.</p>';
-        $html .= '<p class="tip">KUMA, curl und andere HTTP-Dienste benötigen nur den vom Plugin erzeugten Scheduler-Token. Der Token wird per <code>X-GHBackup-Token</code>-Header übertragen und nicht im Workflow gespeichert.</p>';
+        $html .= '<p class="tip">Für GitHub Actions zusätzlich <strong>Workflows: Read and write</strong> und <strong>Secrets: Read and write</strong>. Das Plugin erzeugt das Secret <code>GHBACKUP_SCHEDULER_TOKEN</code> automatisch.</p>';
+        $html .= '<p class="tip">KUMA, curl und andere HTTP-Dienste verwenden den automatisch erzeugten Scheduler-Token über den Header <code>X-GHBackup-Token</code>. Der Token wird nicht im Workflow gespeichert.</p>';
         $html .= '</div>';
         $html .= '<div style="margin-top:1.5em;padding-top:1em;border-top:1px solid #eee">';
         $html .= '<input name="testConnection" type="submit" class="btn btn-secondary" value="Test GitHub connection">';
@@ -170,10 +170,7 @@ class pluginGhbackup extends Plugin
             $this->sendSchedulerResponse(503, ['ok' => false, 'error' => 'HTTP scheduler is not enabled or GitHub settings are incomplete']); return true;
         }
         $result = $this->runScheduledBackup((int)$this->getValue('actionsInterval'), true);
-        $this->sendSchedulerResponse($result ? 200 : 500, [
-            'ok' => $result === true, 'backup' => $result === true, 'timestamp' => date('c'),
-            'lastBackup' => (int)$this->getValue('lastBackup'), 'status' => $this->getStatus()
-        ]);
+        $this->sendSchedulerResponse($result ? 200 : 500, ['ok' => $result === true, 'backup' => $result === true, 'timestamp' => date('c'), 'lastBackup' => (int)$this->getValue('lastBackup'), 'status' => $this->getStatus()]);
         return true;
     }
 
@@ -624,24 +621,7 @@ class pluginGhbackup extends Plugin
         $yaml .= "          curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 120 \\\n";
         $yaml .= "            -H \"X-GHBackup-Token: __DOLLAR__{GHBACKUP_TOKEN}\" \\\n";
         $yaml .= "            \"" . str_replace('"', '\\"', $url) . "\"\n";
-        return str_replace('__DOLLAR__', '    {
-        return trim((string)$this->getValue('token')) !== ''
-            && trim((string)$this->getValue('owner')) !== ''
-            && trim((string)$this->getValue('repo')) !== '';
-    }
-
-    private function setStatus($message)
-    {
-        @file_put_contents($this->workspace() . 'status.txt', $message);
-    }
-
-    private function getStatus()
-    {
-        $file = $this->workspace() . 'status.txt';
-        return is_file($file) ? (string)@file_get_contents($file) : '';
-    }
-}
-, $yaml);
+        return str_replace('__DOLLAR__', chr(36), $yaml);
     }
 
     private function actionsCron($seconds)
