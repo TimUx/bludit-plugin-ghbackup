@@ -288,6 +288,15 @@ class pluginGhbackup extends Plugin
             if (strpos($e->getMessage(), 'GitHub API (404)') === false) {
                 throw $e;
             }
+
+            // A missing ref can mean either an empty repository or a typo in
+            // the configured branch. Only treat it as empty when no branches
+            // exist at all.
+            $branches = $this->githubRequest('GET', '/branches?per_page=1');
+            if (!empty($branches)) {
+                throw new Exception('Branch not found: ' . $branch);
+            }
+
             return ['commit_sha' => null, 'tree_sha' => null];
         }
 
