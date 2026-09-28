@@ -589,7 +589,7 @@ class pluginGhbackup extends Plugin
         $this->ensureSchedulerSecret($token);
         $workflow = $this->buildActionsWorkflow((bool)$this->getValue('actionsEnabled'));
         $path = '.github/workflows/bludit-ghbackup.yml';
-        $branch = $this->getValue('branch');
+        $branch = $this->getDefaultBranch();
         try {
             $existing = $this->githubRequest('GET', '/contents/' . $path . '?ref=' . rawurlencode($branch));
             $payload = ['message' => 'chore(backup): update GitHub Actions scheduler', 'content' => base64_encode($workflow), 'sha' => $existing['sha'], 'branch' => $branch];
@@ -640,6 +640,14 @@ class pluginGhbackup extends Plugin
         }
     }
 
+    private function getDefaultBranch()
+    {
+        $repository = $this->githubRequest('GET', '');
+        if (empty($repository['default_branch'])) {
+            throw new Exception('GitHub did not return the repository default branch.');
+        }
+        return $repository['default_branch'];
+    }
     private function getSchedulerUrl()
     {
         $base = defined('DOMAIN_BASE') ? trim((string)DOMAIN_BASE) : '';
