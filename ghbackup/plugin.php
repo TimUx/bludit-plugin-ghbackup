@@ -589,7 +589,7 @@ class pluginGhbackup extends Plugin
             CURLOPT_TIMEOUT => 120
         ]);
 
-        if ($method === 'POST' || $method === 'PATCH') {
+        if ($method === 'POST' || $method === 'PATCH' || $method === 'PUT') {
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data, JSON_UNESCAPED_SLASHES));
         } elseif ($method !== 'GET') {
@@ -777,7 +777,7 @@ class pluginGhbackup extends Plugin
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $base = $scheme . '://' . $_SERVER['HTTP_HOST'];
         }
-        return rtrim($base, '/') . '/?ghbackup_scheduler=1';
+        return $base !== '' ? rtrim($base, '/') . '/?ghbackup_scheduler=1' : '';
     }
 
     private function isConfigured()
