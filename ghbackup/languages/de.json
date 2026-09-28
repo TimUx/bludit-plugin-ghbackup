@@ -1,0 +1,6 @@
+{
+  "plugin-data": {
+    "name": "GitHub Backup",
+    "description": "Sichert Bludit-Inhalte, Plugins und Themes über die GitHub-API in ein Repository."
+  }
+}
