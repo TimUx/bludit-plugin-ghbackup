@@ -1,6 +1,7 @@
 name: Validate plugin
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -18,3 +19,8 @@ jobs:
           php-version: ${{ matrix.php }}
       - name: PHP syntax check
         run: php -l ghbackup/plugin.php
+      - name: Static integrity check
+        run: |
+          test "$(grep -c 'class pluginGhbackup' ghbackup/plugin.php)" -eq 1
+          test "$(grep -c 'private function isConfigured' ghbackup/plugin.php)" -eq 1
+          test "$(grep -c 'private function buildActionsWorkflow' ghbackup/plugin.php)" -eq 1
