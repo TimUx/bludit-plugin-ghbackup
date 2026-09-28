@@ -91,10 +91,10 @@ class pluginGhbackup extends Plugin
         $html .= '</div>';
 
         $html .= '<div style="margin-top:1.5em;padding:1em;border:1px solid #ddd;background:#f8f9fa">';
-        $html .= '<strong>GitHub Token – welche Berechtigungen?</strong>';
-        $html .= '<p class="tip">Für normale Backups: <strong>Fine-grained Personal Access Token</strong> erstellen, auf dieses Repository beschränken und <strong>Contents: Read and write</strong> vergeben.</p>';
-        $html .= '<p class="tip">Für <strong>GitHub Actions verwenden</strong> zusätzlich <strong>Workflows: Read and write</strong> sowie <strong>Secrets: Read and write</strong> für dasselbe Repository vergeben. Das Plugin legt das Secret <code>GHBACKUP_SCHEDULER_TOKEN</code> automatisch an.</p>';
-        $html .= '<p class="tip">Der Scheduler-Token ist ein separates, automatisch erzeugtes Geheimnis. Er wird nicht im Workflow gespeichert. KUMA, curl und andere HTTP-Tools verwenden ihn über den HTTP-Header <code>X-GHBackup-Token</code>.</p>';
+        $html .= '<strong>GitHub Actions / Scheduler – Token-Hilfe</strong>';
+        $html .= '<p class="tip">Normales Backup: Fine-grained Personal Access Token für dieses Repository mit <strong>Contents: Read and write</strong>.</p>';
+        $html .= '<p class="tip">Für die automatische GitHub-Actions-Verwaltung zusätzlich <strong>Workflows: Read and write</strong> und <strong>Secrets: Read and write</strong>. Das Plugin erzeugt das Secret <code>GHBACKUP_SCHEDULER_TOKEN</code> automatisch.</p>';
+        $html .= '<p class="tip">KUMA, curl und andere HTTP-Dienste benötigen nur den vom Plugin erzeugten Scheduler-Token. Der Token wird per <code>X-GHBackup-Token</code>-Header übertragen und nicht im Workflow gespeichert.</p>';
         $html .= '</div>';
         $html .= '<div style="margin-top:1.5em;padding-top:1em;border-top:1px solid #eee">';
         $html .= '<input name="testConnection" type="submit" class="btn btn-secondary" value="Test GitHub connection">';
@@ -140,7 +140,6 @@ class pluginGhbackup extends Plugin
         if ($this->handleHttpSchedulerRequest()) {
             return;
         }
-
         $this->runScheduledBackup();
     }
 
@@ -152,46 +151,28 @@ class pluginGhbackup extends Plugin
         $this->runScheduledBackup();
     }
 
-    /**
-     * Generic HTTP scheduler trigger for GitHub Actions, KUMA, curl and other clients.
-     */
     private function handleHttpSchedulerRequest()
     {
         $requested = isset($_GET['ghbackup_scheduler']) || isset($_GET['ghbackup_run']);
-        if (!$requested) {
-            return false;
-        }
-
+        if (!$requested) { return false; }
         $configuredToken = trim((string)$this->getValue('schedulerToken'));
-        $headerToken = isset($_SERVER['HTTP_X_GHBACKUP_TOKEN']) ? trim((string)$_SERVER['HTTP_X_GHBACKUP_TOKEN']) : '';
-        if ($headerToken === '' && function_exists('getallheaders')) {
+        $providedToken = isset($_SERVER['HTTP_X_GHBACKUP_TOKEN']) ? trim((string)$_SERVER['HTTP_X_GHBACKUP_TOKEN']) : '';
+        if ($providedToken === '' && function_exists('getallheaders')) {
             foreach ((array)getallheaders() as $name => $value) {
-                if (strcasecmp($name, 'X-GHBackup-Token') === 0) {
-                    $headerToken = trim((string)$value);
-                    break;
-                }
+                if (strcasecmp($name, 'X-GHBackup-Token') === 0) { $providedToken = trim((string)$value); break; }
             }
         }
-        $queryToken = isset($_GET['ghbackup_token']) ? trim((string)$_GET['ghbackup_token']) : '';
-        $providedToken = $headerToken !== '' ? $headerToken : $queryToken;
-
+        if ($providedToken === '' && isset($_GET['ghbackup_token'])) { $providedToken = trim((string)$_GET['ghbackup_token']); }
         if ($configuredToken === '' || $providedToken === '' || !hash_equals($configuredToken, $providedToken)) {
-            $this->sendSchedulerResponse(401, ['ok' => false, 'error' => 'Unauthorized']);
-            return true;
+            $this->sendSchedulerResponse(401, ['ok' => false, 'error' => 'Unauthorized']); return true;
         }
-
         if (!$this->isConfigured() || !$this->getValue('actionsEnabled')) {
-            $this->sendSchedulerResponse(503, ['ok' => false, 'error' => 'HTTP scheduler is not enabled or GitHub settings are incomplete']);
-            return true;
+            $this->sendSchedulerResponse(503, ['ok' => false, 'error' => 'HTTP scheduler is not enabled or GitHub settings are incomplete']); return true;
         }
-
         $result = $this->runScheduledBackup((int)$this->getValue('actionsInterval'), true);
         $this->sendSchedulerResponse($result ? 200 : 500, [
-            'ok' => $result === true,
-            'backup' => $result === true,
-            'timestamp' => date('c'),
-            'lastBackup' => (int)$this->getValue('lastBackup'),
-            'status' => $this->getStatus()
+            'ok' => $result === true, 'backup' => $result === true, 'timestamp' => date('c'),
+            'lastBackup' => (int)$this->getValue('lastBackup'), 'status' => $this->getStatus()
         ]);
         return true;
     }
@@ -593,47 +574,27 @@ class pluginGhbackup extends Plugin
 
     private function syncGitHubActionsWorkflow()
     {
-        if (!$this->getValue('actionsEnabled') && trim((string)$this->getValue('schedulerToken')) === '') {
-            return;
-        }
-        if (!function_exists('sodium_crypto_box_seal')) {
-            throw new Exception('PHP sodium extension is required for GitHub Actions secrets.');
-        }
+        if (!$this->getValue('actionsEnabled') && trim((string)$this->getValue('schedulerToken')) === '') { return; }
+        if (!function_exists('sodium_crypto_box_seal')) { throw new Exception('PHP sodium extension is required for GitHub Actions secrets.'); }
         if (!$this->isConfigured()) {
-            if ($this->getValue('actionsEnabled')) {
-                throw new Exception('GitHub settings are incomplete.');
-            }
+            if ($this->getValue('actionsEnabled')) { throw new Exception('GitHub settings are incomplete.'); }
             return;
         }
-
         $token = trim((string)$this->getValue('schedulerToken'));
         if ($token === '') {
             $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
             $this->setValue('schedulerToken', $token);
         }
         $this->ensureSchedulerSecret($token);
-
         $workflow = $this->buildActionsWorkflow((bool)$this->getValue('actionsEnabled'));
         $path = '.github/workflows/bludit-ghbackup.yml';
         $branch = $this->getValue('branch');
-
         try {
             $existing = $this->githubRequest('GET', '/contents/' . $path . '?ref=' . rawurlencode($branch));
-            $payload = [
-                'message' => 'chore(backup): update GitHub Actions scheduler',
-                'content' => base64_encode($workflow),
-                'sha' => $existing['sha'],
-                'branch' => $branch
-            ];
+            $payload = ['message' => 'chore(backup): update GitHub Actions scheduler', 'content' => base64_encode($workflow), 'sha' => $existing['sha'], 'branch' => $branch];
         } catch (Exception $e) {
-            if (strpos($e->getMessage(), 'GitHub API (404)') === false) {
-                throw $e;
-            }
-            $payload = [
-                'message' => 'chore(backup): add GitHub Actions scheduler',
-                'content' => base64_encode($workflow),
-                'branch' => $branch
-            ];
+            if (strpos($e->getMessage(), 'GitHub API (404)') === false) { throw $e; }
+            $payload = ['message' => 'chore(backup): add GitHub Actions scheduler', 'content' => base64_encode($workflow), 'branch' => $branch];
         }
         $this->githubRequest('PUT', '/contents/' . $path, $payload);
     }
@@ -641,55 +602,29 @@ class pluginGhbackup extends Plugin
     private function ensureSchedulerSecret($token)
     {
         $key = $this->githubRequest('GET', '/actions/secrets/public-key');
-        if (empty($key['key']) || empty($key['key_id'])) {
-            throw new Exception('GitHub did not return the Actions secrets public key.');
-        }
+        if (empty($key['key']) || empty($key['key_id'])) { throw new Exception('GitHub did not return the Actions secrets public key.'); }
         $publicKey = base64_decode($key['key'], true);
-        if ($publicKey === false) {
-            throw new Exception('Invalid GitHub Actions public key.');
-        }
+        if ($publicKey === false) { throw new Exception('Invalid GitHub Actions public key.'); }
         $encrypted = sodium_crypto_box_seal($token, $publicKey);
-        $this->githubRequest('PUT', '/actions/secrets/GHBACKUP_SCHEDULER_TOKEN', [
-            'encrypted_value' => base64_encode($encrypted),
-            'key_id' => $key['key_id']
-        ]);
+        $this->githubRequest('PUT', '/actions/secrets/GHBACKUP_SCHEDULER_TOKEN', ['encrypted_value' => base64_encode($encrypted), 'key_id' => $key['key_id']]);
     }
 
     private function buildActionsWorkflow($enabled)
     {
         $url = $this->getSchedulerUrl();
-        if ($url === '') {
-            throw new Exception('Unable to determine the public scheduler URL.');
-        }
+        if ($url === '') { throw new Exception('Unable to determine the public scheduler URL.'); }
         $yaml = "# Managed by Bludit GitHub Backup plugin.\n";
-        $yaml .= "# Changes made here may be overwritten when the plugin settings are saved.\n";
+        $yaml .= "# Manual edits may be overwritten when the plugin settings are saved.\n";
         $yaml .= "name: Bludit GitHub Backup\n\n";
         $yaml .= "on:\n";
-        if ($enabled) {
-            $yaml .= "  schedule:\n    - cron: '" . $this->actionsCron((int)$this->getValue('actionsInterval')) . "'\n";
-        }
+        if ($enabled) { $yaml .= "  schedule:\n    - cron: '" . $this->actionsCron((int)$this->getValue('actionsInterval')) . "'\n"; }
         $yaml .= "  workflow_dispatch:\n\n";
         $yaml .= "jobs:\n  backup:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    steps:\n";
-        $yaml .= "      - name: Trigger Bludit backup\n        env:\n          GHBACKUP_TOKEN: " . '    {
-        return trim((string)$this->getValue('token')) !== ''
-            && trim((string)$this->getValue('owner')) !== ''
-            && trim((string)$this->getValue('repo')) !== '';
-    }
-
-    private function setStatus($message)
-    {
-        @file_put_contents($this->workspace() . 'status.txt', $message);
-    }
-
-    private function getStatus()
-    {
-        $file = $this->workspace() . 'status.txt';
-        return is_file($file) ? (string)@file_get_contents($file) : '';
-    }
-}
- . "{{ secrets.GHBACKUP_SCHEDULER_TOKEN }}\n        run: |\n";
+        $yaml .= "      - name: Trigger Bludit backup\n        env:\n          GHBACKUP_TOKEN: __DOLLAR__{{ secrets.GHBACKUP_SCHEDULER_TOKEN }}\n        run: |\n";
         $yaml .= "          curl --fail --silent --show-error --retry 3 --retry-delay 5 --max-time 120 \\\n";
-        $yaml .= "            -H \"X-GHBackup-Token: " . '    {
+        $yaml .= "            -H \"X-GHBackup-Token: __DOLLAR__{GHBACKUP_TOKEN}\" \\\n";
+        $yaml .= "            \"" . str_replace('"', '\\"', $url) . "\"\n";
+        return str_replace('__DOLLAR__', '    {
         return trim((string)$this->getValue('token')) !== ''
             && trim((string)$this->getValue('owner')) !== ''
             && trim((string)$this->getValue('repo')) !== '';
@@ -706,9 +641,7 @@ class pluginGhbackup extends Plugin
         return is_file($file) ? (string)@file_get_contents($file) : '';
     }
 }
- . "{GHBACKUP_TOKEN}\" \\\n";
-        $yaml .= "            \"" . str_replace('"', '\\"', $url) . "\"\n";
-        return $yaml;
+, $yaml);
     }
 
     private function actionsCron($seconds)
