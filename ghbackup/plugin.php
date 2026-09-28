@@ -9,7 +9,7 @@
 class pluginGhbackup extends Plugin
 {
     private const API_VERSION = '2022-11-28';
-    private const USER_AGENT = 'Bludit-GitHub-Backup/0.1.0';
+    private const USER_AGENT = 'Bludit-GitHub-Backup/0.2.2';
     private const MAX_FILE_BYTES = 52428800; // 50 MiB
 
     public function init()
@@ -90,6 +90,18 @@ class pluginGhbackup extends Plugin
         $html .= '<span class="tip">No cron required: a normal public page visit triggers the backup once the interval has elapsed. The first visitor after the due time starts it.</span>';
         $html .= '</div>';
 
+        $html .= '<div style="margin-top:1.5em;padding-top:1em;border-top:1px solid #eee">';
+        $html .= '<label>GitHub Actions scheduler</label>';
+        $html .= '<label><input type="hidden" name="actionsEnabled" value="0"><input name="actionsEnabled" type="checkbox" value="1" ' . ($this->getValue('actionsEnabled') ? 'checked' : '') . '> Enable GitHub Actions</label>';
+        $html .= '<select name="actionsInterval">';
+        foreach ([3600 => 'Every hour', 21600 => 'Every 6 hours', 43200 => 'Every 12 hours', 86400 => 'Daily', 604800 => 'Weekly'] as $seconds => $label) {
+            $selected = ((int)$this->getValue('actionsInterval') === $seconds) ? ' selected' : '';
+            $html .= '<option value="' . $seconds . '"' . $selected . '>' . $label . '</option>';
+        }
+        $html .= '</select>';
+        $html .= '<span class="tip">Creates or updates the GitHub Actions workflow on the repository default branch. The backup itself uses the configured backup branch.</span>';
+        $html .= '</div>';
+
         $html .= '<div style="margin-top:1.5em;padding:1em;border:1px solid #ddd;background:#f8f9fa">';
         $html .= '<strong>GitHub Actions / Scheduler – Token-Hilfe</strong>';
         $html .= '<p class="tip">Normales Backup: Fine-grained Personal Access Token für dieses Repository mit <strong>Contents: Read and write</strong>.</p>';
@@ -120,6 +132,14 @@ class pluginGhbackup extends Plugin
 
         if (trim((string)($_POST['token'] ?? '')) === '' && $oldToken !== '') {
             $this->setValue('token', $oldToken);
+        }
+
+        if (empty($_POST['testConnection']) && empty($_POST['runBackup'])) {
+            try {
+                $this->syncGitHubActionsWorkflow();
+            } catch (Throwable $e) {
+                $this->setStatus('Error: ' . $e->getMessage());
+            }
         }
 
         if (!empty($_POST['testConnection'])) {
