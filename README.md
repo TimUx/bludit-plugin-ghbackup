@@ -69,7 +69,7 @@ If the token only has Contents permission, normal manual backups can work but au
 
 ### Changing the interval
 
-The selected interval is written into the generated workflow as a GitHub Actions cron schedule.
+The selected interval is written into the generated workflow as a GitHub Actions cron schedule. The workflow itself is always maintained on the repository's default branch, because GitHub scheduled workflows run only from the default branch. The actual backup can still target the separate branch configured in the plugin.
 
 When the interval is changed and the plugin settings are saved, the workflow file is updated automatically.
 
