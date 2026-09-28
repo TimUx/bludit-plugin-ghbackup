@@ -44,7 +44,7 @@ Supported features include:
 | Git / SSH | Not required |
 | Composer | Not required |
 | License | **MIT** |
-| Current version | **0.2.1** |
+| Current version | **0.2.2** |
 
 Sodium is required for automatic management of GitHub Actions repository secrets. Normal GitHub API backups require cURL.
 
