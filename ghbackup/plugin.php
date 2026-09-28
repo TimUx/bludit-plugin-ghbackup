@@ -25,7 +25,9 @@ class pluginGhbackup extends Plugin
             'backupThemes' => true,
             'autoEnabled' => false,
             'autoInterval' => 86400,
-            'lastBackup' => 0
+            'lastBackup' => 0,
+            'lastAttempt' => 0,
+            'lastError' => ''
         ];
     }
 
@@ -82,7 +84,7 @@ class pluginGhbackup extends Plugin
             $html .= '<option value="' . $seconds . '"' . $selected . '>' . $label . '</option>';
         }
         $html .= '</select>';
-        $html .= '<span class="tip">Without cron, the backup runs when an administrator request occurs after the interval has elapsed.</span>';
+        $html .= '<span class="tip">No cron required: a normal public page visit triggers the backup once the interval has elapsed. The first visitor after the due time starts it.</span>';
         $html .= '</div>';
 
         $html .= '<div style="margin-top:1.5em;padding-top:1em;border-top:1px solid #eee">';
@@ -122,21 +124,56 @@ class pluginGhbackup extends Plugin
 
     /**
      * Shared-hosting friendly scheduler. No cron is required.
+     * Runs on normal public page requests, so the admin area is not required.
+     */
+    public function beforeSiteLoad()
+    {
+        $this->runScheduledBackup();
+    }
+
+    /**
+     * Keep the admin hook as a fallback for sites without public traffic.
      */
     public function afterAdminLoad()
     {
+        $this->runScheduledBackup();
+    }
+
+    private function runScheduledBackup()
+    {
         if (!$this->getValue('autoEnabled') || !$this->isConfigured()) {
-            return;
+            return false;
         }
 
+        $now = time();
         $last = (int)$this->getValue('lastBackup');
         $interval = max(3600, (int)$this->getValue('autoInterval'));
 
-        if ($last > 0 && (time() - $last) < $interval) {
-            return;
+        if ($last > 0 && ($now - $last) < $interval) {
+            return false;
         }
 
-        $this->runBackup(true);
+        $lockPath = $this->workspace() . 'scheduler.lock';
+        $lock = @fopen($lockPath, 'c+');
+        if (!$lock || !@flock($lock, LOCK_EX | LOCK_NB)) {
+            if ($lock) {
+                @fclose($lock);
+            }
+            return false;
+        }
+
+        try {
+            $last = (int)$this->getValue('lastBackup');
+            if ($last > 0 && ($now - $last) < $interval) {
+                return false;
+            }
+
+            $this->setValue('lastAttempt', $now);
+            return $this->runBackup(true);
+        } finally {
+            @flock($lock, LOCK_UN);
+            @fclose($lock);
+        }
     }
 
     private function runBackup($automatic = false)
