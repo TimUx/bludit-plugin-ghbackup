@@ -556,6 +556,10 @@ class pluginGhbackup extends Plugin
             throw new Exception('cURL: ' . ($error ?: 'unknown error'));
         }
 
+        if ($httpCode === 204 && trim($response) === '') {
+            return [];
+        }
+
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
             throw new Exception('GitHub returned an invalid JSON response (HTTP ' . $httpCode . ').');
