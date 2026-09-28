@@ -2,9 +2,9 @@
   "author": "TimUx",
   "email": "",
   "website": "https://github.com/TimUx/bludit-plugin-ghbackup",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "releaseDate": "2026-09-28",
   "license": "MIT",
   "compatible": "3.22",
-  "notes": "GitHub backup for Bludit content, plugins and themes via GitHub API."
+  "notes": "GitHub backup for Bludit content, plugins and themes via GitHub API with visitor/HTTP scheduling and optional GitHub Actions scheduler management."
 }
